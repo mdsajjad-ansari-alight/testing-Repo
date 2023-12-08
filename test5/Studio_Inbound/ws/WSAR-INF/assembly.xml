@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans
+     xmlns="http://www.springframework.org/schema/beans"
+     xmlns:beans="http://www.springframework.org/schema/beans"
+     xmlns:atom="http://www.w3.org/2005/Atom"
+     xmlns:cc="http://www.capeclear.com/assembly/10"
+     xmlns:cloud="urn:com.workday/esb/cloud/10.0"
+     xmlns:env="http://schemas.xmlsoap.org/soap/envelope/"
+     xmlns:pi="urn:com.workday/picof"
+     xmlns:wd="urn:com.workday/bsvc"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ 
+	<cc:assembly id="WorkdayAssembly" version="2023.37">
+        <cc:workday-in id="Inbound" routes-to="CallProcessdata">
+            <cc:integration-system name="Studio_Inbound">
+        <cloud:param name="Run on Validation mode">
+          <cloud:type>
+            <cloud:simple-type>boolean</cloud:simple-type>
+          </cloud:type>
+        </cloud:param>
+        <cloud:attribute-map-service name="Map Service">
+          <cloud:map name="GenderMapping">
+            <cloud:internal-type>
+              <cloud:simple-type>text</cloud:simple-type>
+            </cloud:internal-type>
+            <cloud:external-type>
+              <cloud:simple-type>text</cloud:simple-type>
+            </cloud:external-type>
+          </cloud:map>
+        </cloud:attribute-map-service>
+        <cloud:retrieval-service name="Retrieval"/>
+      </cc:integration-system>
+        </cc:workday-in>
+        <cc:async-mediation id="RetriFile" routes-to="Splitter" handle-downstream-errors="true">
+            <cc:steps>
+                <cc:validate-exp id="ValidateExp">
+                    <cc:expression>da.size()>0</cc:expression>
+                </cc:validate-exp>
+                <cc:eval id="Eval">
+                    <cc:expression>da.toVar(0, 'InputFile');</cc:expression>
+                </cc:eval>
+                <cc:csv-to-xml id="CsvToXml" input="variable" input-variable="InputFile" format="rfc4180" separator="|" useFirstLineAsHeader="true"/>
+            </cc:steps>
+            <cc:send-error id="SendError" routes-to="IpttFileErrmsg"/>
+        </cc:async-mediation>
+        <cc:send-error id="global-error-handler" rethrow-error="false" routes-to="Note-Error"/>
+        <cc:local-out id="Note-Error" endpoint="vm://wcc/PutIntegrationMessage">
+            <cc:set name="is.message.severity" value="'CRITICAL'"/>
+            <cc:set name="is.message.summary" value="context.errorMessage"/>
+        </cc:local-out>
+        <cc:async-mediation id="CreateReq" routes-to="ValidationON" handle-downstream-errors="true">
+            <cc:steps>
+                <cc:eval id="Eval">
+                    <cc:expression>props['empid'] = parts[0].xpath('/row/Employee-ID')</cc:expression>
+                    <cc:expression>props['gender'] = parts[0].xpath('/row/Gender')</cc:expression>
+                    <cc:expression>props['GenderMap'] = intsys.integrationMapReverseLookup('GenderMapping', props['gender'])</cc:expression>
+                    <cc:expression>props['Gen'] = props['GenderMap'].toString().replaceAll('[\\[\\]]','')</cc:expression>
+                    <cc:expression>props['validOn'] = lp.getSimpleData('Run on Validation mode')</cc:expression>
+                </cc:eval>
+                <cc:validate-exp id="ValidateExp">
+                    <cc:expression failure-message="Gender code is blank">props['GenderMap'] != null</cc:expression>
+                </cc:validate-exp>
+                <cc:write id="Req">
+                    <cc:message>
+                        <cc:text>&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;
+&lt;env:Envelope&#xD;
+    xmlns:env=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot;&#xD;
+    xmlns:xsd=&quot;http://www.w3.org/2001/XMLSchema&quot;>&#xD;
+    &lt;env:Body>&#xD;
+        &lt;wd:Change_Personal_Information_Request&#xD;
+            xmlns:wd=&quot;urn:com.workday/bsvc&quot;&#xD;
+            wd:version=&quot;v41.0&quot;>&#xD;
+            &lt;wd:Business_Process_Parameters>&#xD;
+                &lt;wd:Auto_Complete>true&lt;/wd:Auto_Complete>&#xD;
+                &lt;wd:Run_Now>true&lt;/wd:Run_Now>&#xD;
+                &lt;wd:Discard_On_Exit_Validation_Error>true&lt;/wd:Discard_On_Exit_Validation_Error>&#xD;
+            &lt;/wd:Business_Process_Parameters>&#xD;
+            &lt;wd:Change_Personal_Information_Data>&#xD;
+                &lt;wd:Person_Reference>&#xD;
+                    &lt;wd:ID wd:type=&quot;Employee_ID&quot;>@{props['empid']}&lt;/wd:ID>&#xD;
+                &lt;/wd:Person_Reference>&#xD;
+                &lt;wd:Personal_Information_Data>&#xD;
+                    &lt;wd:Gender_Reference>&#xD;
+                        &lt;wd:ID wd:type=&quot;Gender_Code&quot;>@{props['Gen']}&lt;/wd:ID>&#xD;
+                    &lt;/wd:Gender_Reference>&#xD;
+                &lt;/wd:Personal_Information_Data>&#xD;
+            &lt;/wd:Change_Personal_Information_Data>&#xD;
+        &lt;/wd:Change_Personal_Information_Request>&#xD;
+    &lt;/env:Body>&#xD;
+&lt;/env:Envelope></cc:text>
+                    </cc:message>
+                </cc:write>
+                <cc:log id="Log">
+                    <cc:log-message>
+                        <cc:text>props['GenderMap']  @{props['GenderMap'] }&#xD;
+props['Gen'] @{props['Gen']}</cc:text>
+                    </cc:log-message>
+                </cc:log>
+            </cc:steps>
+            <cc:send-error id="SendError" routes-to="AsyncMediation1"/>
+        </cc:async-mediation>
+        <cc:local-out id="IpttFileErrmsg" endpoint="vm://wcc/PutIntegrationMessage"><cc:set name="is.message.severity" value="'ERROR'"/><cc:set name="is.message.summary" value="&quot;Input File is missing&quot;"/></cc:local-out>
+        <cc:workday-out-soap id="Genderupdate" routes-response-to="ValidationOFF" application="Human_Resources" version="v41.0"/>
+        <cc:splitter id="Splitter">
+            <cc:sub-route name="SubRoute" routes-to="CreateReq"/>
+            <cc:xml-stream-splitter xpath="root/row"/>
+        </cc:splitter>
+        <cc:async-mediation id="ValidationON" routes-to="Genderupdate" execute-steps-when="props['validOn'] == 'true' || props['validOn'] == true">
+            <cc:steps>
+                <cc:set-headers id="ValidationON">
+                    <cc:remove-headers/>
+                    <cc:add-headers>
+                        <cc:add-header name="X-Validate-Only" value="1"/>
+                    </cc:add-headers>
+                </cc:set-headers>
+            </cc:steps>
+        </cc:async-mediation>
+        <cc:async-mediation id="ValidationOFF" routes-to="AsyncMediation10" execute-steps-when="props['validOn'] == 'true' || props['validOn'] == true">
+            <cc:steps>
+                <cc:set-headers id="ValidationOFF">
+                    <cc:remove-headers>
+                        <cc:remove-header name="X-Validate-Only"/>
+                    </cc:remove-headers>
+                    <cc:add-headers/>
+                </cc:set-headers>
+            </cc:steps>
+        </cc:async-mediation>
+        <cc:local-out id="CallAuditLogError" store-message="none" endpoint="vm://Studio_Inbound/CreateAudit"><cc:set name="Status" value="'Errored'"/><cc:set name="MsgDetails" value="'Error at the load ' # context.errorMessage"/></cc:local-out>
+        <cc:local-out id="CallAuditLogSuccess" store-message="none" endpoint="vm://Studio_Inbound/CreateAudit"><cc:set name="Status" value="'Success'"/><cc:set name="MsgDetails" value="'Data/Gender update successful'"/></cc:local-out>
+        <cc:local-in id="CreateAudit" routes-to="AsyncMediation0"/>
+        <cc:async-mediation id="AsyncMediation" routes-to="Aggregator">
+            <cc:steps>
+                <cc:write id="Write">
+                    <cc:message>
+                        <cc:text>@{props['empid']},@{props['Status']},@{props['MsgDetails']}@{'\n'}</cc:text>
+                    </cc:message>
+                </cc:write>
+            </cc:steps>
+            <cc:send-error id="SendError" routes-to="PutIntegrationMessage"/>
+        </cc:async-mediation>
+        <cc:aggregator id="Aggregator" routes-to="AsyncMediation0">
+            <cc:size-batch-strategy batch-size="-1"/>
+            <cc:message-content-collater>
+        <cc:header-text>Employee ID,Status,Error Message@{'\n'}</cc:header-text>
+      </cc:message-content-collater>
+        </cc:aggregator>
+        <cc:async-mediation id="AsyncMediation0" routes-to="PutIntegrationMessage0">
+            <cc:steps>
+                <cc:store id="Auditfile" output="variable" output-variable="Auditfile" input="variable" input-variable="v.Log" createDocumentReference="false" expiresIn="P180D" title="InboundAuditfile.html"/>
+            </cc:steps>
+        </cc:async-mediation>
+        <cc:local-out id="PutIntegrationMessage" endpoint="vm://wcc/PutIntegrationMessage"><cc:set name="is.message.severity" value="'ERROR'"/><cc:set name="is.message.summary" value="'Error at aggregating or creating Audit file'"/></cc:local-out>
+        <cc:local-out id="PutIntegrationMessage0" endpoint="vm://wcc/PutIntegrationMessage"><cc:set name="is.message.severity" value="'INFO'"/><cc:set name="is.message.summary" value="'Audit file is created successfully'"/><cc:set name="is.document.labels" value="'inAuditfile'"/><cc:set name="is.document.deliverable" value="'true'"/><cc:set name="is.document.file.name" value="'Auditfile.html'"/><cc:set name="is.document.variable.name" value="'Auditfile'"/></cc:local-out>
+        <cc:async-mediation id="AsyncMediation1">
+            <cc:steps>
+                <cc:cloud-log id="CloudLog" level="error" message="Error" message-details="@{context.errorMessage}" reference-id="props['empid']" variable-name="v.Log"/>
+            </cc:steps>
+        </cc:async-mediation>
+        <cc:async-mediation id="AsyncMediation10">
+            <cc:steps>
+                <cc:cloud-log id="CloudLog" level="info" message="Success" message-details="Data load is successful" reference-id="props['empid']" variable-name="v.Log"/>
+            </cc:steps>
+        </cc:async-mediation>
+        <cc:local-out id="CallProcessdata" store-message="none" routes-response-to="CallAudit" endpoint="vm://Studio_Inbound/Processdata"/>
+        <cc:local-out id="CallAudit" store-message="none" endpoint="vm://Studio_Inbound/CreateAudit"/>
+        <cc:local-in id="Processdata" routes-to="RetriFile"/>
+	</cc:assembly>
+
+</beans>
