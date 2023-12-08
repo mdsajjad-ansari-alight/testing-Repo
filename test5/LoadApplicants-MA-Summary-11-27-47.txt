@@ -1,0 +1,11 @@
+MA_Rajesh|Kumar|6267132849|MA_Rajesh.kumar@xyz.net|Warning
+MA_Vikram|Sudha|8184672028|MA_Vikram.sudha@xyz.net|Warning
+MA_Peter|Joseph|7472009178|MA_Peter.Joseph@xyz.net|Warning
+MA_Vicky|Robert|8316448459|MA_Vicky.Robert@xyz.net|Warning
+MA_Suresh|Venkat|7476148389|MA_Suresh.Venkat@xyz.net|Warning
+MA_Ram||7578484321|MA_Ram.Kumar@xyz.net|Warning
+|MA Stalin|8789876541|MA_Moses.Stalin@xyz.net|Warning
+MA_Susan|Vijay| |MA_Susan.Vijay@xyz.net|Error
+MA_Vidya|Kumar|9899998|MA_Vidya.Kumar@xyz.net|Error
+MA_Vini|Agarwal|7876543431||Error
+MA_Vikram|Veda|8789899870|lmcneil@workday.net|Warning
